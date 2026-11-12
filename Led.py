@@ -1,110 +1,195 @@
+
 from machine import Pin
 import time
 
+
 class Led:
+
     def __init__(self, pin):
         self.pin = Pin(pin, Pin.OUT)
         self.pin.off()
-        
-        # Variabili di stato temporale
-        self.last_tick = time.ticks_ms()
-        self.is_on = False
-        self.pattern_queue = []   # Coda delle fasi: [(t_on, t_off, count), ...]
-        self.curr_t_on = 0
-        self.curr_t_off = 0
-        self.repeats_left = 0
+
         self.active = False
-        self.alarm_active = False
+        self.is_on = False
+
+        self.mode = None
+
+        self.deadline = 0
+
+        self.on_time = 0
+        self.off_time = 0
+
+        self.remaining = 0
+        self.frequency = 0
+
+    # --------------------------------
+    # GESTIONE SEQUENZE TEMPORALI
+    # --------------------------------
+
+    def _start(self, on_time, off_time, repetitions=0):
+        self.stop()
+
+        self.on_time = on_time
+        self.off_time = off_time
+        self.remaining = repetitions
+
+        self.active = True
+        self.is_on = True
+
+        self.pin.on()
+
+        self.deadline = time.ticks_add(
+            time.ticks_ms(), on_time
+        )
+
+        self.mode = "sequence"
+
+    # --------------------------------
+    # CODICE CORRETTO
+    # --------------------------------
+
+    def good_code(self):
+        # LED acceso fisso per 2 secondi
+        self._start(2000, 0, 1)
+
+    # --------------------------------
+    # CODICE ERRATO
+    # --------------------------------
+
+    def bad_code(self, flag):
+
+        if flag:
+            # 2 Hz per 30 secondi:
+            # 250 ms acceso + 250 ms spento
+            self.stop()
+
+            self.active = True
+            self.mode = "timed_blink"
+
+            self.on_time = 250
+            self.off_time = 250
+
+            self.remaining = 60
+
+            self.is_on = True
+            self.pin.on()
+
+            self.deadline = time.ticks_add(
+                time.ticks_ms(), 250
+            )
+
+        else:
+            # 3 lampeggi rapidi
+            self._start(100, 100, 3)
+
+    # --------------------------------
+    # PREALLARME
+    # --------------------------------
+
+    def preallarm(self):
+        # Periodo totale 1000 ms
+        # 500 ms acceso + 500 ms spento
+        self.stop()
+
+        self.active = True
+        self.mode = "continuous"
+
+        self.on_time = 500
+        self.off_time = 500
+
+        self.is_on = True
+        self.pin.on()
+
+        self.deadline = time.ticks_add(
+            time.ticks_ms(), 500
+        )
+
+    # --------------------------------
+    # ALLARME
+    # --------------------------------
+
+    def allarm(self):
+        # Periodo totale 200 ms
+        # 100 ms acceso + 100 ms spento
+        self.stop()
+
+        self.active = True
+        self.mode = "continuous"
+
+        self.on_time = 100
+        self.off_time = 100
+
+        self.is_on = True
+        self.pin.on()
+
+        self.deadline = time.ticks_add(
+            time.ticks_ms(), 100
+        )
+
+    # --------------------------------
+    # AGGIORNAMENTO NON BLOCCANTE
+    # --------------------------------
 
     def update(self):
-        """Da invocare a ogni giro del while True nel main."""
-        # Se non c'è una fase attiva ma c'è roba in coda, carica la prossima fase
-        if not self.active and self.pattern_queue:
-            self._load_next_stage()
-
-        # Se l'allarme continuo è attivo e non c'è nulla in corso, rilancia il blink
-        if not self.active and self.alarm_active:
-            self.sus(0.2)
-            return
 
         if not self.active:
             return
 
         now = time.ticks_ms()
-        elapsed = time.ticks_diff(now, self.last_tick)
+
+        if time.ticks_diff(now, self.deadline) < 0:
+            return
 
         if self.is_on:
-            if elapsed >= self.curr_t_on:
-                self.pin.off()
-                self.is_on = False
-                self.last_tick = now
-                self.repeats_left -= 1
+
+            # Spegne il LED
+            self.pin.off()
+            self.is_on = False
+
+            if self.mode == "sequence" or self.mode == "timed_blink":
+                self.remaining -= 1
+
+                if self.remaining <= 0:
+                    self.stop()
+                    return
+
+            self.deadline = time.ticks_add(
+                now, self.off_time
+            )
+
         else:
-            if elapsed >= self.curr_t_off:
-                if self.repeats_left > 0:
-                    self.pin.on()
-                    self.is_on = True
-                    self.last_tick = now
-                else:
-                    self.active = False
-                    self.pin.off()
-                    # Se ci sono altre fasi in coda (es. bad_code), avvia subito la successiva
-                    if self.pattern_queue:
-                        self._load_next_stage()
 
-    def _load_next_stage(self):
-        t_on, t_off, count = self.pattern_queue.pop(0)
-        self.curr_t_on = t_on
-        self.curr_t_off = t_off
-        self.repeats_left = count
-        self.pin.on()
-        self.is_on = True
-        self.active = True
-        self.last_tick = time.ticks_ms()
+            # Riaccende il LED
+            self.pin.on()
+            self.is_on = True
 
-    def _set_sequence(self, stages):
-        self.pattern_queue = stages.copy()
-        self.active = False
-        self.is_on = False
-        self._load_next_stage()
+            self.deadline = time.ticks_add(
+                now, self.on_time
+            )
 
-    def digit_visualizer(self, blink):
-        if blink == 0:
-            self._set_sequence([(800, 0, 1)])
-        else:
-            self._set_sequence([(100, 150, blink)])
+    # --------------------------------
+    # STOP
+    # --------------------------------
 
-    def good_code(self):
-        self._set_sequence([(2000, 0, 1)])
+    def stop(self):
 
-    def bad_code(self, flag):
-        if flag:
-            # 60 lampeggi (30 * 2) da 0.25 s (250 ms ON, 250 ms OFF)
-            stages = [(250, 250, 60)]
-        else:
-            # 3 lampeggi da 0.5 s (500 ms ON, 500 ms OFF)
-            stages = [(500, 500, 3)]
-            
-        self._set_sequence(stages)
-    
-
-    def sus(self, t):
-        ms = int(t * 1000)
-        self._set_sequence([(ms, ms, 1)])
-
-    def sus_condition(self, lettura, soglia):
-        if lettura < soglia and not self.active:
-            self.sus(0.5)
-
-    def led_alarm(self, danger):
-        self.alarm_active = danger
-        if not danger:
-            self.led_closure()
-
-    def led_closure(self):
-        self.pattern_queue.clear()
-        self.alarm_active = False
-        self.active = False
-        self.is_on = False
-        self.repeats_left = 0
         self.pin.off()
+
+        self.active = False
+        self.is_on = False
+
+        self.remaining = 0
+        self.mode = None
+
+    def deinit(self):
+        self.stop()
+        self.pin = None
+
+'''
+good_code(self): fa rimanere il led acceso per 2 secondi
+bad_code(self,flag): fa eseguire tre lampeggi rapidi al led se il flag è false e lampeggia con freq di 2hz per 30secondi
+preallarm(slef): fa lampeggiare il led con un periodo di 1000ms fino alla stop()
+allarm(self): fa lampeggiare il led rapidamente con periodi di 200ms fino alla stop()
+stop(slef): fa fermare il led
+update(self): per aggiornare il time
+'''
