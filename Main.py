@@ -1,36 +1,51 @@
 from Led import Led
 from Potenziometer import Potenziometer
 
-
 from time import sleep
 import time
 from machine import Pin,PWM,ADC
 from enum import Enum
 
-class Stato(Enum):
-    BLOCCATO=0
-    ACCESSO_CONSENTITO=1
-    CAMBIO_CODICE=2
+# STATI
+BLOCCATO=0
+ACCESSO_CONSENTITO=1
+CAMBIO_CODICE=2
 #stati non presenti da specifica
-    AVVIO=3
-    CHIUSURA=4
+AVVIO=3
+CHIUSURA=4
+APERTURA=5
+PREALLARME=6
+ALLARME=7
 
 ##############Gestione Bottone#######################
-btn=17
-EBOUNCE_MS=200
-last_on=0
-pressed=false
-
 btn=Pin(btn,Pin.IN,Pin.PULL_DOWN)
 
-def btn_handler(pin):
-    global last_on,pressed
-    current_time=time.ticks_ms()
-    if time.ticks_diff(current_time, last_on) > DEBOUNCE_MS:
-        last_on = current_time
-        pressed = True
+DEBOUNCE_MS=200
+last_on=0
+pressione=False
+pressione_lunga=False
+btn_ultimo_stato=0
+btn_inizio_pressione=0
 
-btn.irq(trigger=Pin.IRQ_RISING, handler=btn_handler)
+
+def btn_handler(pin):
+    global last_on, pressione, pressione_lunga, btn_ultimo_stato, btn_inizio_pressione
+    now=time.ticks_ms()
+    valore_attuale = btn.value()
+
+    if valore_attuale != btn_ultimo_stato and time.ticks_diff(now, last_on) > DEBOUNCE_MS:
+        last_on = now
+        btn_ultimo_stato = valore_attuale
+
+        if valore_attuale == 1:
+            btn_inizio_pressione = now
+        else:
+            durata = time.ticks_diff(now, btn_inizio_pressione)
+            if durata >= 3000:
+                pressione_lunga = True
+            elif durata > 200:
+                pressione = True
+
 ####################################################
 buzzer=Buzzer(16)
 stepmotor=Stepmotor(33,25,26,27)
@@ -40,33 +55,36 @@ ptn=Potenziometer(34)
 led=LED_5000hz(14)
 initial=[3,7,1,9]
 ####################################################
-last_checked=0
 insert=[]
 access_count=0
-state=Stato.AVVIO
-#per lock e unlock
-stepper_avviato=False
-servo_avviato=False
-
+stato_attuale = AVVIO
+tempo_inizio_timeout = 0
 
 def routine_inserimento():
-    global insert
-    global pressed #perchè va modificato
-    global state
-    state=Stato.AVVIO
-    i=0
-    while insert.length!=4:
+    global insert, pressione, stato_attuale, tempo_inizio_timeout
+
+    insert = []
+    tempo_inizio_timeout = time.ticks_ms()       # inizializza il timer dei 15s all'ingresso
+    
+    while len(insert) < 4:
+        now = time.ticks_ms()
         x=ptn.get_cifra()
-        now=time.ticks_ms()
-        if pressed and time.ticks_diff(now,last_checked)<15000 :
-            insert[i]=x
-            led.digit_visualizer(insert[i])
-            i+=1
-            pressed=false
-        if time.ticks_diff(now,last_checked)>=15000:
-            print("Inserimento annullato per timeout. (15 secondi)")
+
+        if time.ticks_diff(now, tempo_inizio_timeout) >= 15000:
+            print("Inserimento annullato per timeout. (15 s)")
+            insert = []
             return
- 
+
+        btn_handler()
+        if pressione:
+            pressione = False
+            insert.append(x)
+            print(f"Codice attuale: {insert}")
+            led.digit_visualizer(x)
+            tempo_inizio_timeout = now
+
+
+
 def unlock():
     global state
     state=Stato.ACCESSO_CONSENTITO
