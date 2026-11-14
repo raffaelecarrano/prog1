@@ -18,7 +18,7 @@ PREALLARME=6
 ALLARME=7
 
 ##############Gestione Bottone#######################
-btn=Pin(btn,Pin.IN,Pin.PULL_DOWN)
+btn=Pin(17,Pin.IN,Pin.PULL_DOWN)
 
 DEBOUNCE_MS=200
 last_on=0
@@ -60,6 +60,7 @@ access_count=0
 stato_attuale = AVVIO
 tempo_inizio_timeout = 0
 
+
 def routine_inserimento():
     global insert, pressione, stato_attuale, tempo_inizio_timeout
 
@@ -84,12 +85,11 @@ def routine_inserimento():
             tempo_inizio_timeout = now
 
 
-
+"""
+# Meglio se li gestiamo nel while True
 def unlock():
-    global state
-    state=Stato.ACCESSO_CONSENTITO
     led.pin.on()
-    if servo.angle!=90:
+    if servo.angle != 90:
         servo.apply_angle(90)
     #servo.update_servo() va inserito nel main
     #stepper.update() va inserito nel main
@@ -99,47 +99,98 @@ def unlock():
 
 def lock():
     #viene chiamata dopo 10 secondi da avvenuto sblocco nel while
-    global state
-    state=Stato.CHIUSURA
     led.pin.off()
     stepper.start_steps(1024,1)
     #controllo che stepper abbia finito
     #funzione servo motore
-    state=Stato.AVVIO
-    
-    
-    
-    
-    
- 
+"""
+
 def auth():
-    global initial
-    global access_count
-    global insert
-    global state
-    flag=False
-    for i in range(4):
-        if initial[i]!=insert[i]:
-            access_count+=1
-            led.bad_code(flag)
-            buzzer.codiceErratoTone()
-            insert=[0,0,0,0]
-            if access_count==3:
-                flag=true
-                led.bad_code(flag)
-                
-                now=time.ticks_ms()
-                
-                print("Sistema temporaneamente bloccato. Timeout: 30 secondi.")
-                buzzer.bloccatoTone()
-                state=Stato.BLOCCATO
-                while(now<30000):
-                    continue
-            return
-    #a questo punto, insert corrisponde a initial: tentativo di accesso riuscito
-    state=Stato.ACCESSO_CONSENTITO
-    led.good_code()
-    buzzer.codiceCorrettoTone()
-    access_count=0
-    unlock()
+    global access_count, insert, stato_attuale
+
+    if insert == initial:
+        print("Accesso autorizzato!")
+        buzzer.codiceCorrettoTone()
+        led.good_code()
+        access_count = 0            # azzero i tentativi
+        stato_attuale = APERTURA
+    else:
+        print("Codice errato!")
+        buzzer.codiceErratoTone()
+        led.bad_code()
+        access_count += 1
+        insert = []                # azzero il codice inserito
+
+        if access_count >= 3:
+            print("Tre codici errati consecutivi. Sistema Bloccato per 30 s")
+            stato_attuale = BLOCCATO
+        else:
+            stato_attuale = AVVIO
+
+
+fase_chiusura = 0      
+fase_apertura = 0
+tempo_sblocco = 0
+
+
+while True:
+    # lettura sensori
+
+    if stato_attuale == AVVIO:
+        pass
+    elif stato_attuale == ACCESSO_CONSENTITO:
+        pass
+
+    # STATO APERTURA
+    elif stato_attuale == APERTURA:
+        if fase_apertura == 0:
+            servo.apply_angle(90)
+            fase_apertura = 1
             
+        elif fase_apertura == 1:
+            servo.update_servo()                        # Fa un passo alla volta ogni 30 ms
+            if servo.done:
+                stepper.start_steps(1024, -1)           # Senso Orario     
+                fase_apertura = 2
+                
+        elif fase_apertura == 2:
+            stepper.update()
+            if stepper.done:
+                led.pin.on()
+                tempo_sblocco = time.ticks_ms()        # Timer di 10 s
+                stato_attuale = ACCESSO_CONSENTITO
+                fase_apertura = 0
+
+    # STATO: CHIUSURA
+    elif stato_attuale == CHIUSURA:
+        if fase_chiusura == 0:
+            stepper.start_steps(1024, 1)               # Senso Antiorario
+            fase_chiusura = 1
+            
+        elif fase_chiusura == 1:
+            stepper.update()
+            if stepper.done:
+                servo.apply_angle(0)
+                fase_chiusura = 2
+                
+        elif fase_chiusura == 2:
+            servo.update_servo()
+            if servo.done:
+                led.pin.off()
+                stato_attuale = AVVIO
+                fase_chiusura = 0
+
+
+    elif stato_attuale == BLOCCATO:
+        pass
+    elif stato_attuale == CAMBIO_CODICE:
+        pass
+    elif stato_attuale == PREALLARME:
+        pass
+    elif stato_attuale == ALLARME:
+        pass
+    
+    
+    
+    
+        
