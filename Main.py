@@ -28,7 +28,7 @@ btn_ultimo_stato=0
 btn_inizio_pressione=0
 
 
-def btn_handler(pin):
+def btn_handler():
     global last_on, pressione, pressione_lunga, btn_ultimo_stato, btn_inizio_pressione
     now=time.ticks_ms()
     valore_attuale = btn.value()
@@ -59,6 +59,49 @@ insert=[]
 access_count=0
 stato_attuale = AVVIO
 tempo_inizio_timeout = 0
+
+# Gestione LDR
+inizio_sospetta = 0
+inizio_intrusione = 0
+
+def gestione_ldr():
+    global stato_attuale, inizio_sospetta, inizio_intrusione
+
+    # Rilevamento intrusione solo in stati AVVIO e BLOCCATO
+    if stato_attuale not in [AVVIO, BLOCCATO]:
+        inizio_sospetta = 0
+        inizio_intrusione = 0
+        return
+
+    now = time.ticks_ms()
+    delta = ldr.ldr_delta()
+    
+    if delta >= 1200:
+        if inizio_intrusione == 0:
+            inizio_intrusione = now
+        elif time.ticks_diff(now, inizio_intrusione) >= 1000:
+            if stato_attuale != ALLARME:
+                print("INTRUSIONE RILEVATA!")
+                stato_attuale = ALLARME
+                led.allarm()
+                buzzer.IntrusioneTone()
+        return                         # Priorità massima, saltiamo il controllo condizione sospetta
+        
+    elif delta >= 500:
+        inizio_intrusione = 0
+        if inizio_sospetta == 0:
+            inizio_sospetta = now
+        elif time.ticks_diff(now, inizio_sospetta) >= 3000:
+            if stato_attuale not in [PREALLARME, ALLARME]:
+                print("Condizione sospetta prolungata")
+                stato_attuale = PREALLARME
+                led.preallarm()
+                buzzer.sospettaIntrusioneTone()
+    else:
+        # Reset
+        inizio_sospetta = 0
+        inizio_intrusione = 0
+        
 
 
 def routine_inserimento():
@@ -144,6 +187,9 @@ fase_chiusura = 0
 fase_apertura = 0
 tempo_sblocco = 0
 
+# ================ AVVIO DEL SISTEMA ================ #
+ldr.ldr_avvio()
+
 
 while True:
     now = time.ticks_ms()
@@ -152,7 +198,7 @@ while True:
     led.update()
     buzzer.update()
     btn_handler()
-    #Altro ....
+    gestisci_ldr()
 
     if stato_attuale == AVVIO:
         pass
