@@ -44,6 +44,16 @@ class Led:
 
         self.mode = "sequence"
 
+    # ---------------------------------
+    # VISUALIZZA CIFRA
+    # ---------------------------------
+    
+    def digit_visualizer(self, cifra):
+        if cifra == 0:
+            self._start(800, 0, 1)
+        else:
+            self._start(100, 150, cifra)
+
     # --------------------------------
     # CODICE CORRETTO
     # --------------------------------
