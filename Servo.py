@@ -14,20 +14,27 @@ class SERVO:
 
     def __init__(self,pin):
         self.angle = 0
-        self.sg90 = PWM(Pin(pin, mode=Pin.OUT))
-        self.sg90.freq(50)
         self.last_move_time = 0
         self.delay = 30 #ms
         self.target = 0
-        self.apply_angle(self.angle)
+        self.done = True
+        
+        self.sg90 = PWM(Pin(pin, mode=Pin.OUT))
+        self.sg90.freq(50)
+        # Posizione iniziale = 0°
+        duty = int(22 + (self.angle/180) * 100)
+        self.sg90.duty(duty)
+        
         
     def apply_angle(self, target):
         self.target = target
+        if self.target != self.angle:
+            self.done = False
         
     def update_servo(self):
         """Sposta il servo verso il target con incrementi di 3°"""
         
-        if self.angle == self.target:     # già nella posizione richiesta
+        if self.done:     # già nella posizione richiesta
             return
         
         now = utime.ticks_ms()
@@ -42,6 +49,9 @@ class SERVO:
         
             duty = int(22 + (self.angle/180)*100)  # Mappatura lineare: 0° -> 22, 180° -> 122 (circa)
             self.sg90.duty(duty)
+            
+            if self.angle == self.target:          # Controllo destinazione raggiunta
+                self.done = True
         
         
         
