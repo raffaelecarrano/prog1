@@ -84,7 +84,7 @@ def routine_inserimento():
             led.digit_visualizer(x)
             print(f"Cifra selezionata: {x}")
 
-        led_update()
+        led.update()
         btn_handler()
         
         if pressione:
@@ -146,7 +146,13 @@ tempo_sblocco = 0
 
 
 while True:
-    # lettura sensori
+    now = time.ticks_ms()
+
+    #Aggiornamento continuo
+    led.update()
+    buzzer.update()
+    btn_handler()
+    #Altro ....
 
     if stato_attuale == AVVIO:
         pass
