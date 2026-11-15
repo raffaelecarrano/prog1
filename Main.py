@@ -66,22 +66,34 @@ def routine_inserimento():
 
     insert = []
     tempo_inizio_timeout = time.ticks_ms()       # inizializza il timer dei 15s all'ingresso
+    ultima_cifra = -1                            # traccia i cambiamenti del potenziometro
     
     while len(insert) < 4:
         now = time.ticks_ms()
-        x=ptn.get_cifra()
-
+        
         if time.ticks_diff(now, tempo_inizio_timeout) >= 15000:
             print("Inserimento annullato per timeout. (15 s)")
+            led.stop()
             insert = []
             return
 
+        x = ptn.get_cifra()
+
+        if x != ultima_cifra:
+            ultima_cifra = x
+            led.digit_visualizer(x)
+            print(f"Cifra selezionata: {x}")
+
+        led_update()
         btn_handler()
+        
         if pressione:
             pressione = False
             insert.append(x)
             print(f"Codice attuale: {insert}")
-            led.digit_visualizer(x)
+            led.stop()
+
+            ultima_cifra = -1            # Reset per permettere di inserire lo stesso valore precedente
             tempo_inizio_timeout = now
 
 
