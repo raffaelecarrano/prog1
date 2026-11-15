@@ -28,17 +28,18 @@ class STEPMOTOR:
         self.target_steps = 0
         self.last_step_time = 0
         self.step_delay = 3 # ms
-        
+        self.done = True
         
     def start_steps(self, steps, direction):
         """Avvia la richiesta di movimento senza bloccare il codice"""
         self.target_steps = steps
         self.direction = direction
+        self.done = False
         
     
     def update(self):
         """Esegue un solo passo"""
-        if self.target_steps <= 0:
+        if self.done:
             return
 
         now = utime.ticks_ms()
@@ -53,11 +54,15 @@ class STEPMOTOR:
                 self.stepper_pins[pin_index].value(pin_value)
                 
             self.target_steps -= 1
+
+            if self.target_steps <= 0:
+                self.done = True
             
 
     def stop(self):
         """Spegne tutte le bobine"""
         self.target_steps = 0
+        self.done = True
         
         for pin in self.stepper_pins:
             pin.value(0)
